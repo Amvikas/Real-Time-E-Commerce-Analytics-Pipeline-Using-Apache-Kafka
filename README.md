@@ -3,7 +3,7 @@
 A real-time analytics pipeline that simulates e-commerce user activity, streams it through
 Apache Kafka, aggregates it in a stream processor, and displays it on a live dashboard.
 
-<img width="960" height="564" alt="image" src="https://github.com/user-attachments/assets/4db97aeb-d409-4fbb-8b3b-dcc138893a3d" />
+<img width="945" height="505" alt="Screenshot 2026-07-05 114616" src="https://github.com/user-attachments/assets/f6056b73-c199-4e32-9194-f1cfa8002aaf" />
 
 
 ## Architecture
