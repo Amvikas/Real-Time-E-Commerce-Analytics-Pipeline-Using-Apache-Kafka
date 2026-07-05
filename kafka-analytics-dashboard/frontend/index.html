@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Live Commerce Pulse — Kafka Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1220;
+    --panel: #121B2E;
+    --panel-border: #1F2C46;
+    --amber: #F2A65A;
+    --amber-dim: #8A5E31;
+    --text: #E7ECF5;
+    --text-dim: #7C8AA6;
+    --green: #59D9A0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 28px 32px 60px;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+  }
+  header .title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  header .title span { color: var(--amber); }
+  .status {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+  .dot.off { background: #E05A5A; box-shadow: 0 0 8px #E05A5A; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stat-card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .stat-card .value {
+    font-size: 30px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .stat-card .value.amber { color: var(--amber); }
+  .stat-card .value.green { color: var(--green); }
+
+  .panels {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .panel h3 {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .panel-row { display: grid; grid-template-rows: auto; gap: 16px; }
+  canvas { max-height: 260px; }
+
+  .product-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--panel-border);
+    font-size: 14px;
+  }
+  .product-row:last-child { border-bottom: none; }
+  .product-row .units { color: var(--amber); font-family: 'JetBrains Mono', monospace; }
+
+  footer {
+    margin-top: 24px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">Live Commerce <span>Pulse</span></div>
+  <div class="status"><span class="dot off" id="statusDot"></span><span id="statusText">connecting…</span></div>
+</header>
+
+<div class="grid">
+  <div class="stat-card">
+    <div class="label">Total Revenue</div>
+    <div class="value amber mono" id="revenue">$0.00</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Purchases</div>
+    <div class="value mono" id="purchases">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Active Users (60s window)</div>
+    <div class="value green mono" id="activeUsers">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Events / interval</div>
+    <div class="value mono" id="eventsRate">0</div>
+  </div>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <h3>Revenue Over Time</h3>
+    <canvas id="revenueChart"></canvas>
+  </div>
+  <div class="panel panel-row">
+    <div>
+      <h3>Top Products</h3>
+      <div id="topProducts"></div>
+    </div>
+  </div>
+</div>
+
+<div class="panels" style="margin-top:16px;">
+  <div class="panel">
+    <h3>Sales by Region</h3>
+    <canvas id="regionChart"></canvas>
+  </div>
+  <div class="panel">
+    <h3>About This Stream</h3>
+    <p style="font-size:13px; line-height:1.6; color:var(--text-dim);">
+      This dashboard subscribes to the <code class="mono" style="color:var(--amber)">dashboard_metrics</code>
+      Kafka topic via a WebSocket bridge. Raw <code class="mono" style="color:var(--amber)">page_views</code>,
+      <code class="mono" style="color:var(--amber)">user_clicks</code>, and
+      <code class="mono" style="color:var(--amber)">purchases</code> events are aggregated by a
+      stream-processing consumer group every 2 seconds.
+    </p>
+  </div>
+</div>
+
+<footer>Kafka Real-Time Analytics Pipeline &middot; Producer → Kafka → Consumer Group → Postgres / Kafka topic → WebSocket → Dashboard</footer>
+
+<script>
+  const WS_URL = "ws://localhost:8000/ws";
+  const HISTORY_URL = "http://localhost:8000/api/history?limit=30";
+
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+
+  const revenueChartCtx = document.getElementById('revenueChart').getContext('2d');
+  const regionChartCtx = document.getElementById('regionChart').getContext('2d');
+
+  const revenueChart = new Chart(revenueChartCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Revenue ($)',
+        data: [],
+        borderColor: '#F2A65A',
+        backgroundColor: 'rgba(242,166,90,0.12)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7C8AA6', maxTicksLimit: 6 }, grid: { color: '#1F2C46' } },
+        y: { ticks: { color: '#7C8AA6' }, grid: { color: '#1F2C46' } },
+      }
+    }
+  });
+
+  const regionChart = new Chart(regionChartCtx, {
+    type: 'doughnut',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        backgroundColor: ['#F2A65A', '#59D9A0', '#5A8FE0', '#E05A5A', '#B15AE0', '#E0C15A'],
+        borderColor: '#121B2E',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { color: '#E7ECF5', boxWidth: 12 } } }
+    }
+  });
+
+  function fmtMoney(n) {
+    return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function applySnapshot(snapshot) {
+    document.getElementById('revenue').textContent = fmtMoney(snapshot.total_revenue);
+    document.getElementById('purchases').textContent = snapshot.total_purchases;
+    document.getElementById('activeUsers').textContent = snapshot.active_users;
+    document.getElementById('eventsRate').textContent = snapshot.events_last_interval;
+
+    const label = new Date(snapshot.timestamp).toLocaleTimeString();
+    revenueChart.data.labels.push(label);
+    revenueChart.data.datasets[0].data.push(snapshot.total_revenue);
+    if (revenueChart.data.labels.length > 40) {
+      revenueChart.data.labels.shift();
+      revenueChart.data.datasets[0].data.shift();
+    }
+    revenueChart.update('none');
+
+    const regionEntries = Object.entries(snapshot.sales_by_region || {});
+    regionChart.data.labels = regionEntries.map(([r]) => r);
+    regionChart.data.datasets[0].data = regionEntries.map(([, v]) => v);
+    regionChart.update('none');
+
+    const topProductsEl = document.getElementById('topProducts');
+    topProductsEl.innerHTML = '';
+    (snapshot.top_products || []).forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'product-row';
+      row.innerHTML = `<span>${p.name}</span><span class="units">${p.units} sold</span>`;
+      topProductsEl.appendChild(row);
+    });
+  }
+
+  // Load history first so charts aren't empty on page load
+  fetch(HISTORY_URL).then(r => r.json()).then(rows => {
+    rows.forEach(row => applySnapshot(row.metrics));
+  }).catch(() => {});
+
+  function connect() {
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      statusDot.classList.remove('off');
+      statusText.textContent = 'live';
+    };
+    ws.onclose = () => {
+      statusDot.classList.add('off');
+      statusText.textContent = 'reconnecting…';
+      setTimeout(connect, 2000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (event) => {
+      const snapshot = JSON.parse(event.data);
+      applySnapshot(snapshot);
+    };
+  }
+  connect();
+</script>
+
+</body>
+</html>
